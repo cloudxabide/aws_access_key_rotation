@@ -4,7 +4,9 @@ A Python tool to safely rotate AWS IAM user access keys and automatically update
 
 ## Overview
 
-`keyctl` automates the process of rotating AWS access keys, which is a critical security best practice. The tool:
+`keyctl` automates the process of rotating AWS access keys, which is a critical security best practice. 
+
+The tool:
 
 1. Allows you to choose which profile to use for authentication
 2. Allows you to choose which profile's keys to rotate
@@ -40,7 +42,9 @@ A Python tool to safely rotate AWS IAM user access keys and automatically update
 
 1. Clone or download this repository:
 ```bash
-cd ~/Developer/Projects/aws_access_key_rotation
+mkdir ~/Developer/Projects/; cd $_
+https://github.com/cloudxabide/aws_access_key_rotation.git
+cd aws_access_key_rotation
 ```
 
 2. Install required Python dependencies:
@@ -53,10 +57,9 @@ pip install boto3
 chmod +x keyctl
 ```
 
-4. (Optional) Add to your PATH for easy access:
+3a. Install this script to be used globally (Optional)
 ```bash
-# Add to ~/.bashrc or ~/.zshrc
-export PATH="$PATH:$HOME/Developer/Projects/aws_access_key_rotation"
+sudo install -o root -m 0755 keyctl /usr/local/bin/keyctl
 ```
 
 ## Common Use Cases
@@ -65,20 +68,20 @@ export PATH="$PATH:$HOME/Developer/Projects/aws_access_key_rotation"
 Rotate your own keys using your own profile:
 ```bash
 # Interactive: Select the same profile for both steps
-./keyctl
+keyctl
 
 # Command line: Specify only target (uses it for auth too)
-./keyctl -t my-profile
+keyctl -t my-profile
 ```
 
 ### Admin-Managed Rotation
 Use an admin profile to rotate keys for other users:
 ```bash
 # Interactive: Select admin for auth, user profile for target
-./keyctl
+keyctl
 
 # Command line: Specify different profiles
-./keyctl -a admin -t developer-user
+keyctl -a admin -t developer-user
 ```
 
 ### Automated Rotation
@@ -86,7 +89,7 @@ Rotate multiple users in a script:
 ```bash
 #!/bin/bash
 for user in dev1 dev2 dev3; do
-    ./keyctl -a admin -t $user
+    keyctl -a admin -t $user
 done
 ```
 
@@ -97,7 +100,7 @@ done
 Run without arguments to see a two-step menu:
 
 ```bash
-./keyctl
+keyctl
 ```
 
 Example:
@@ -135,13 +138,13 @@ Specify both profiles directly:
 
 ```bash
 # Use admin profile to rotate production profile
-./keyctl -a admin -t production
+keyctl -a admin -t production
 
 # Rotate a profile using itself for authentication
-./keyctl -t production
+keyctl -t production
 
 # Or specify both the same
-./keyctl -a production -t production
+keyctl -a production -t production
 ```
 
 ### List Profiles
@@ -149,7 +152,7 @@ Specify both profiles directly:
 List all available profiles without rotating:
 
 ```bash
-./keyctl --list
+keyctl --list # or (-k)
 ```
 
 ### Custom Credentials File
@@ -157,7 +160,7 @@ List all available profiles without rotating:
 Specify a different credentials file location:
 
 ```bash
-./keyctl --credentials /path/to/credentials -a admin -t production
+keyctl --credentials /path/to/credentials -a admin -t production
 ```
 
 ## How It Works
@@ -182,7 +185,7 @@ aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 region = us-east-1
 ```
 
-**After running `./keyctl production`**:
+**After running `keyctl production`**:
 ```ini
 [production]
 aws_access_key_id = AKIAI44QH8DHBEXAMPLE
@@ -284,7 +287,7 @@ aws iam attach-user-policy \
 Install boto3: `pip install boto3`
 
 ### "Error: Profile not found"
-Check that the profile exists in `~/.aws/credentials` using `./keyctl --list`
+Check that the profile exists in `~/.aws/credentials` using `keyctl --list`
 
 ### "AWS API Error: AccessDenied"
 This can happen for several reasons:
