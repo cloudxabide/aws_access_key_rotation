@@ -51,6 +51,106 @@ class CredentialsManager:
         profiles = [p for p in config.sections() if not p.endswith('-previous')]
         return profiles
 
+    def list_keys(self, auth_profile, target_profile):
+        """List access keys for a profile (read-only)
+
+        Args:
+            auth_profile: Profile to use for AWS API authentication
+            target_profile: Profile whose keys will be listed
+        """
+        config = self.read_credentials()
+
+        if target_profile not in config.sections():
+            print(f"Error: Profile '{target_profile}' not found in credentials file")
+            return False
+
+        # Get current credentials
+        if 'aws_access_key_id' not in config[target_profile]:
+            print(f"Error: Profile '{target_profile}' does not have aws_access_key_id")
+            return False
+
+        current_access_key = config[target_profile]['aws_access_key_id']
+
+        print(f"\nAuthentication profile: {auth_profile}")
+        print(f"Target profile: {target_profile}")
+        print(f"Current Access Key ID: {current_access_key}")
+
+        # Create AWS IAM client using the auth profile
+        try:
+            session = boto3.Session(profile_name=auth_profile)
+            iam = session.client('iam')
+
+            # Get the IAM username
+            try:
+                user_info = iam.get_user()
+                username = user_info['User']['UserName']
+            except ClientError:
+                # Try to find which user owns the target access key
+                print("\nSearching for user who owns the target access key...")
+                username = None
+
+                try:
+                    paginator = iam.get_paginator('list_users')
+                    for page in paginator.paginate():
+                        for user in page['Users']:
+                            user_keys = iam.list_access_keys(UserName=user['UserName'])
+                            for key in user_keys['AccessKeyMetadata']:
+                                if key['AccessKeyId'] == current_access_key:
+                                    username = user['UserName']
+                                    break
+                            if username:
+                                break
+                        if username:
+                            break
+                except ClientError as e:
+                    print(f"Error finding user: {e}")
+                    return False
+
+                if not username:
+                    print("Error: Could not determine which user owns the target access key")
+                    return False
+
+            print(f"IAM Username: {username}")
+
+            # List existing access keys
+            existing_keys = iam.list_access_keys(UserName=username)
+            print(f"\nExisting access keys: {len(existing_keys['AccessKeyMetadata'])} of 2 maximum")
+            print("=" * 70)
+
+            for i, key_meta in enumerate(existing_keys['AccessKeyMetadata'], 1):
+                key_id = key_meta['AccessKeyId']
+                created = key_meta['CreateDate']
+                status = key_meta['Status']
+
+                # Calculate age
+                age = datetime.now(created.tzinfo) - created
+                age_days = age.days
+
+                # Mark which key is the current one in the target profile
+                is_current = "(CURRENT)" if key_id == current_access_key else ""
+
+                print(f"\n  {i}. {key_id} {is_current}")
+                print(f"     Status: {status}")
+                print(f"     Created: {created.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                print(f"     Age: {age_days} days")
+
+                # Warn if key is old
+                if age_days > 90:
+                    print(f"     ⚠️  WARNING: Key is over 90 days old")
+
+            print("\n" + "=" * 70)
+            return True
+
+        except ClientError as e:
+            print(f"\nAWS API Error: {e}")
+            return False
+        except BotoCoreError as e:
+            print(f"\nBoto3 Error: {e}")
+            return False
+        except Exception as e:
+            print(f"\nUnexpected error: {e}")
+            return False
+
     def rotate_keys(self, auth_profile, target_profile):
         """Rotate the AWS access keys for the given profile
 
@@ -258,22 +358,25 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                              # Interactive menu
+  %(prog)s                              # Interactive menu to rotate keys
   %(prog)s -a admin -t user1            # Use 'admin' profile to rotate 'user1'
   %(prog)s -t my-profile                # Use same profile for auth and rotation
   %(prog)s -l                           # List available profiles
+  %(prog)s -k -t my-profile             # List keys for 'my-profile' (read-only)
+  %(prog)s --list-keys -a admin -t user # List keys using admin auth (read-only)
         """
     )
     parser.add_argument('-a', '--auth-profile', help='Profile to use for AWS API authentication')
-    parser.add_argument('-t', '--target-profile', help='Profile whose keys will be rotated')
+    parser.add_argument('-t', '--target-profile', help='Profile whose keys will be rotated/listed')
     parser.add_argument('-l', '--list', action='store_true', help='List available profiles')
+    parser.add_argument('-k', '--list-keys', action='store_true', help='List access keys for a profile (read-only, no rotation)')
     parser.add_argument('-c', '--credentials', help='Path to credentials file (default: ~/.aws/credentials)')
 
     args = parser.parse_args()
 
     manager = CredentialsManager(args.credentials)
 
-    # List mode
+    # List profiles mode
     if args.list:
         profiles = manager.get_profiles()
         print("Available profiles:")
@@ -298,14 +401,28 @@ Examples:
         target_profile = args.auth_profile
     else:
         # Interactive mode - ask for both
-        print("Select the profile to use for AWS API authentication:")
-        print("(This profile will be used to call AWS IAM APIs)")
-        auth_profile = select_profile_from_menu(profiles, "Available profiles for authentication:")
+        if args.list_keys:
+            print("Select the profile to use for AWS API authentication:")
+            print("(This profile will be used to call AWS IAM APIs)")
+            auth_profile = select_profile_from_menu(profiles, "Available profiles for authentication:")
 
-        print("\n" + "="*60)
-        print("Select the profile whose keys you want to rotate:")
-        print("(This profile will be updated with new credentials)")
-        target_profile = select_profile_from_menu(profiles, "Available profiles to rotate:")
+            print("\n" + "="*60)
+            print("Select the profile whose keys you want to list:")
+            target_profile = select_profile_from_menu(profiles, "Available profiles to list:")
+        else:
+            print("Select the profile to use for AWS API authentication:")
+            print("(This profile will be used to call AWS IAM APIs)")
+            auth_profile = select_profile_from_menu(profiles, "Available profiles for authentication:")
+
+            print("\n" + "="*60)
+            print("Select the profile whose keys you want to rotate:")
+            print("(This profile will be updated with new credentials)")
+            target_profile = select_profile_from_menu(profiles, "Available profiles to rotate:")
+
+    # List keys mode (read-only)
+    if args.list_keys:
+        success = manager.list_keys(auth_profile, target_profile)
+        sys.exit(0 if success else 1)
 
     # Rotate the keys
     success = manager.rotate_keys(auth_profile, target_profile)
