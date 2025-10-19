@@ -43,7 +43,7 @@ The tool:
 1. Clone or download this repository:
 ```bash
 mkdir ~/Developer/Projects/; cd $_
-https://github.com/cloudxabide/aws_access_key_rotation.git
+git clone https://github.com/cloudxabide/aws_access_key_rotation.git
 cd aws_access_key_rotation
 ```
 
@@ -328,6 +328,10 @@ cp ~/.aws/credentials.backup.20250118_143022 ~/.aws/credentials
 ## Contributing
 
 Feel free to submit issues or pull requests to improve this tool.
+
+## Credits
+
+This tool was created with assistance from Claude (Anthropic's AI assistant). The implementation, documentation, and design patterns were developed through collaborative AI-assisted development.
 
 ## License
 
