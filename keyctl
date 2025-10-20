@@ -80,14 +80,31 @@ class CredentialsManager:
             session = boto3.Session(profile_name=auth_profile)
             iam = session.client('iam')
 
-            # Get the IAM username
-            try:
-                user_info = iam.get_user()
-                username = user_info['User']['UserName']
-            except ClientError:
-                # Try to find which user owns the target access key
+            # Determine the IAM username
+            username = None
+
+            # Strategy 1: If auth and target are the same, use get_user()
+            if auth_profile == target_profile:
+                try:
+                    user_info = iam.get_user()
+                    username = user_info['User']['UserName']
+                    print(f"IAM Username: {username}")
+                except ClientError:
+                    pass  # Fall through to next strategy
+
+            # Strategy 2: Assume target_profile name matches IAM username
+            if not username:
+                try:
+                    # Try to list keys for a user with the same name as target_profile
+                    test_keys = iam.list_access_keys(UserName=target_profile)
+                    username = target_profile
+                    print(f"IAM Username (from profile name): {username}")
+                except ClientError:
+                    pass  # User doesn't exist, fall through to next strategy
+
+            # Strategy 3: Search for which user owns the target access key
+            if not username:
                 print("\nSearching for user who owns the target access key...")
-                username = None
 
                 try:
                     paginator = iam.get_paginator('list_users')
@@ -109,8 +126,6 @@ class CredentialsManager:
                 if not username:
                     print("Error: Could not determine which user owns the target access key")
                     return False
-
-            print(f"IAM Username: {username}")
 
             # List existing access keys
             existing_keys = iam.list_access_keys(UserName=username)
@@ -185,18 +200,31 @@ class CredentialsManager:
             session = boto3.Session(profile_name=auth_profile)
             iam = session.client('iam')
 
-            # Get the IAM username from the target profile's current credentials
-            # We'll use the auth profile to look up who owns the target access key
-            try:
-                # First try to get user from the auth session
-                user_info = iam.get_user()
-                username = user_info['User']['UserName']
-                print(f"IAM Username (from auth profile): {username}")
-            except ClientError:
-                # If that fails, we might be an admin looking up another user
-                # Try to find which user owns the target access key
+            # Determine the IAM username to use for rotation
+            username = None
+
+            # Strategy 1: If auth and target are the same, use get_user()
+            if auth_profile == target_profile:
+                try:
+                    user_info = iam.get_user()
+                    username = user_info['User']['UserName']
+                    print(f"IAM Username: {username}")
+                except ClientError:
+                    pass  # Fall through to next strategy
+
+            # Strategy 2: Assume target_profile name matches IAM username
+            if not username:
+                try:
+                    # Try to list keys for a user with the same name as target_profile
+                    test_keys = iam.list_access_keys(UserName=target_profile)
+                    username = target_profile
+                    print(f"IAM Username (from profile name): {username}")
+                except ClientError:
+                    pass  # User doesn't exist, fall through to next strategy
+
+            # Strategy 3: Search for which user owns the target access key
+            if not username:
                 print("Searching for user who owns the target access key...")
-                username = None
 
                 # List all users (requires admin permissions)
                 try:
@@ -221,8 +249,6 @@ class CredentialsManager:
                 if not username:
                     print("Error: Could not determine which user owns the target access key")
                     return False
-
-            print(f"IAM Username: {username}")
 
             # List existing access keys
             existing_keys = iam.list_access_keys(UserName=username)

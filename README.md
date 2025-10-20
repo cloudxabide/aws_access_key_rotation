@@ -168,12 +168,17 @@ keyctl --credentials /path/to/credentials -a admin -t production
 1. **Select Profiles**: Choose authentication profile and target profile (or specify via command line)
 2. **Read Current Configuration**: Parses `~/.aws/credentials` to find the target profile
 3. **Authenticate**: Uses the auth profile credentials to authenticate with AWS IAM
-4. **Identify User**: Determines which IAM user owns the target profile's access key
+4. **Identify User**: Determines which IAM user to rotate keys for using this logic:
+   - If auth and target profiles are the same, uses the authenticated user
+   - Otherwise, assumes the target profile name matches an IAM username (best practice)
+   - Falls back to searching for which user owns the target profile's access key (requires `iam:ListUsers`)
 5. **Check Key Limit**: AWS allows max 2 access keys per user. If the user has 2, the oldest is deleted
 6. **Create New Key**: Generates a new access key for the target user via the IAM API
 7. **Backup Old Credentials**: Moves current credentials to `{target-profile}-previous`
 8. **Update Profile**: Writes new credentials to the target profile
 9. **Create File Backup**: Saves a timestamped backup of the entire credentials file
+
+**Best Practice**: Name your profiles to match IAM usernames (e.g., profile `john-dev` for IAM user `john-dev`) for most reliable operation.
 
 ## Example Workflow
 
@@ -289,17 +294,21 @@ Install boto3: `pip install boto3`
 ### "Error: Profile not found"
 Check that the profile exists in `~/.aws/credentials` using `keyctl --list`
 
-### "AWS API Error: AccessDenied"
+### "AWS API Error: AccessDenied" or "InvalidClientTokenId"
 This can happen for several reasons:
 - **Self-rotation**: Ensure the auth profile has permissions to manage its own keys (see Self-Service IAM Policy)
 - **Admin rotation**: Ensure the auth profile has permissions to manage other users' keys (see Admin IAM Policy)
-- **Invalid credentials**: The auth profile credentials may be expired or invalid
+- **Invalid credentials**: The auth profile credentials may be expired, deleted, or invalid
+- **After failed rotation**: If a previous rotation attempt failed, the credentials file may have invalid keys. Check `~/.aws/credentials.backup.*` files to restore valid credentials, or manually update the access key in the credentials file
 
 ### "Error: Could not determine which user owns the target access key"
-When using different auth and target profiles, the script needs to identify which IAM user owns the target access key. This requires:
-- The auth profile to have `iam:ListUsers` permission
-- Access to list all users in the account
-- Or you can specify the username manually with `--user` flag (future enhancement)
+When using different auth and target profiles, the script tries to identify the IAM user in this order:
+1. Assumes the target profile name matches an IAM username (e.g., `-t john-dev` looks for IAM user `john-dev`)
+2. Searches for which user owns the target profile's access key (requires `iam:ListUsers` permission)
+
+If both fail, ensure:
+- Your target profile name matches the IAM username, OR
+- The auth profile has `iam:ListUsers` permission to search all users
 
 ### "User has maximum number of access keys (2)"
 The script will prompt you to delete the oldest key. You can also manually delete an old key in the AWS Console first.
@@ -338,6 +347,12 @@ This tool was created with assistance from Claude (Anthropic's AI assistant). Th
 MIT License - feel free to use and modify as needed.
 
 ## Changelog
+
+### Version 2.0.1
+- **Bug fix**: Fixed IAM user detection when using different auth and target profiles
+- Now assumes target profile name matches IAM username before searching (more efficient)
+- Improved user identification logic with three-strategy fallback
+- Updated documentation with best practices for profile naming
 
 ### Version 2.0.0
 - **Breaking change**: Two-profile system (authentication + target)
