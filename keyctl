@@ -166,6 +166,84 @@ class CredentialsManager:
             print(f"\nUnexpected error: {e}")
             return False
 
+    def list_all_keys(self, auth_profile):
+        """List access keys for all IAM users (requires admin permissions)
+
+        Args:
+            auth_profile: Profile to use for AWS API authentication
+        """
+        print(f"\nAuthentication profile: {auth_profile}")
+        print("Listing all IAM users and their access keys...\n")
+
+        # Create AWS IAM client using the auth profile
+        try:
+            session = boto3.Session(profile_name=auth_profile)
+            iam = session.client('iam')
+
+            # Get all users
+            all_users = []
+            paginator = iam.get_paginator('list_users')
+            for page in paginator.paginate():
+                all_users.extend(page['Users'])
+
+            print(f"Found {len(all_users)} IAM user(s)")
+            print("=" * 90)
+
+            # For each user, list their access keys
+            for user in all_users:
+                username = user['UserName']
+
+                try:
+                    # List access keys for this user
+                    keys_response = iam.list_access_keys(UserName=username)
+                    keys = keys_response['AccessKeyMetadata']
+
+                    print(f"\nUser: {username}")
+                    print(f"  Access Keys: {len(keys)} of 2 maximum")
+
+                    if not keys:
+                        print("  No access keys")
+                    else:
+                        for i, key_meta in enumerate(keys, 1):
+                            key_id = key_meta['AccessKeyId']
+                            created = key_meta['CreateDate']
+                            status = key_meta['Status']
+
+                            # Calculate age
+                            age = datetime.now(created.tzinfo) - created
+                            age_days = age.days
+
+                            print(f"\n    {i}. {key_id}")
+                            print(f"       Status: {status}")
+                            print(f"       Created: {created.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                            print(f"       Age: {age_days} days")
+
+                            # Warn if key is old
+                            if age_days > 90:
+                                print(f"       ⚠️  WARNING: Key is over 90 days old")
+
+                    print("-" * 90)
+
+                except ClientError as e:
+                    print(f"  Error listing keys for {username}: {e}")
+                    print("-" * 90)
+
+            print(f"\nTotal users processed: {len(all_users)}")
+            return True
+
+        except ClientError as e:
+            print(f"\nAWS API Error: {e}")
+            print("\nTroubleshooting:")
+            print("- Ensure the auth profile has admin permissions")
+            print("- Required IAM permissions: iam:ListUsers, iam:ListAccessKeys")
+            return False
+        except BotoCoreError as e:
+            print(f"\nBoto3 Error: {e}")
+            return False
+        except Exception as e:
+            print(f"\nUnexpected error: {e}")
+            return False
+
     def rotate_keys(self, auth_profile, target_profile):
         """Rotate the AWS access keys for the given profile
 
@@ -390,12 +468,15 @@ Examples:
   %(prog)s -l                           # List available profiles
   %(prog)s -k -t my-profile             # List keys for 'my-profile' (read-only)
   %(prog)s --list-keys -a admin -t user # List keys using admin auth (read-only)
+  %(prog)s --list-all-keys -a admin     # List ALL keys for ALL users (requires admin)
+  %(prog)s --list-all-keys              # List all keys (interactive profile selection)
         """
     )
     parser.add_argument('-a', '--auth-profile', help='Profile to use for AWS API authentication')
     parser.add_argument('-t', '--target-profile', help='Profile whose keys will be rotated/listed')
     parser.add_argument('-l', '--list', action='store_true', help='List available profiles')
     parser.add_argument('-k', '--list-keys', action='store_true', help='List access keys for a profile (read-only, no rotation)')
+    parser.add_argument('--list-all-keys', action='store_true', help='List access keys for ALL IAM users (requires admin permissions)')
     parser.add_argument('-c', '--credentials', help='Path to credentials file (default: ~/.aws/credentials)')
 
     args = parser.parse_args()
@@ -409,6 +490,21 @@ Examples:
         for p in profiles:
             print(f"  - {p}")
         return
+
+    # List all keys mode (requires admin permissions)
+    if args.list_all_keys:
+        # Determine which profile to use for authentication
+        if args.auth_profile:
+            auth_profile = args.auth_profile
+        else:
+            # Interactive mode - ask for auth profile
+            profiles = manager.get_profiles()
+            print("Select the profile to use for AWS API authentication:")
+            print("(This profile must have admin permissions to list all IAM users)")
+            auth_profile = select_profile_from_menu(profiles, "Available profiles for authentication:")
+
+        success = manager.list_all_keys(auth_profile)
+        sys.exit(0 if success else 1)
 
     profiles = manager.get_profiles()
 
