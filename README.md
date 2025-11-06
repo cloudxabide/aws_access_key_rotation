@@ -2,6 +2,8 @@
 
 A Python tool to safely rotate AWS IAM user access keys and automatically update your `~/.aws/credentials` file.
 
+NOTE: if you have keys on multiple systems, you need to be aware that you will need to update the other systems with the new keys. Also - using keys is not really "in favor" these days, but.. here we are ;-)
+
 Warning:  I am still testing this and do not **fully** trust this yet.  You should ALWAYS have a backup, but... if your ONLY method/strategy to access AWS is through your ACCESS KEY/ID (i.e. you don't have a console admin access, or some sort of break-glass/fallback, I'd probably not use this script until I remove this warning.
 
 ## Overview
